@@ -24,7 +24,7 @@ const Navbar = () => {
       <div className="container nav-content">
         <NavLink to="/" className="nav-logo">
           <Code size={20} />
-          <span>Bansal OJ</span>
+          <span>OJ{ 0 }</span>
         </NavLink>
 
         {/* Desktop Navigation Links */}
