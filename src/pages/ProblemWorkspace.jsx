@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axiosInstance from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { Play, Send, MessageSquare, Code2, AlertTriangle, CheckCircle, Trash2, Clock } from 'lucide-react';
+import { Play, Send, MessageSquare, Code2, AlertTriangle, CheckCircle, Trash2, Clock, Eye, EyeOff, FileText, AlertOctagon } from 'lucide-react';
 
 const ProblemWorkspace = () => {
   const { slug } = useParams();
@@ -14,7 +14,7 @@ const ProblemWorkspace = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Workspace Tabs: 'description' | 'comments' | 'submissions'
+  // Workspace Tabs: 'description' | 'discussions' | 'submissions'
   const [activeTab, setActiveTab] = useState('description');
 
   // Code Editor State
@@ -22,49 +22,54 @@ const ProblemWorkspace = () => {
   const [code, setCode] = useState('');
   
   // Console Runner State
-  const [customInput, setCustomInput] = useState('');
   const [runnerOutput, setRunnerOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [runVerdict, setRunVerdict] = useState(null); // { status, detail }
+  
+  // Toggle Hint State
+  const [showHint, setShowHint] = useState(false);
 
-  // Comments State
-  const [comments, setComments] = useState([]);
-  const [commentBody, setCommentBody] = useState('');
-  const [submittingComment, setSubmittingComment] = useState(false);
+  // Discussions State (Replaces Comments)
+  const [discussions, setDiscussions] = useState([]);
+  const [discussionTitle, setDiscussionTitle] = useState('');
+  const [discussionContent, setDiscussionContent] = useState('');
+  const [submittingDiscussion, setSubmittingDiscussion] = useState(false);
+  
+  // Active Thread ID for showing content in accordion style
+  const [expandedDiscussionId, setExpandedDiscussionId] = useState(null);
 
-  // Submissions Simulation State
+  // Submissions State
   const [submissionsList, setSubmissionsList] = useState([]);
 
-  // Default code templates based on selected problem and language
-  const getCodeTemplate = (prob, lang) => {
+  // Load starter code dynamically from DB schema or fallback
+  const loadCodeTemplate = (prob, lang) => {
     if (!prob) return '';
+    const dbTemplate = prob.codeTemplateSchema?.find(t => t.language === lang);
+    if (dbTemplate) return dbTemplate.starterCode;
+
+    // Fallback template if missing
     if (lang === 'javascript') {
-      if (prob.slug === 'two-sum') {
-        return `// JavaScript Template\nfunction twoSum(nums, target) {\n    // Write your code here\n    const map = new Map();\n    for (let i = 0; i < nums.length; i++) {\n        const diff = target - nums[i];\n        if (map.has(diff)) {\n            return [map.get(diff), i];\n        }\n        map.set(nums[i], i);\n    }\n    return [];\n}`;
-      }
-      if (prob.slug === 'reverse-string') {
-        return `// JavaScript Template\nfunction reverseString(s) {\n    // Write your code here\n    // Modify s in-place\n    let left = 0, right = s.length - 1;\n    while (left < right) {\n        const temp = s[left];\n        s[left] = s[right];\n        s[right] = temp;\n        left++;\n        right--;\n    }\n    return s;\n}`;
-      }
-      // General template
       const funcName = prob.slug.replace(/-([a-z])/g, (g) => g[1].toUpperCase());
-      return `// JavaScript Template\nfunction ${funcName}(input) {\n    // Write code here\n    return input;\n}`;
-    } else if (lang === 'python') {
-      return `def solve():\n    # Python 3 Template\n    pass\n`;
-    } else {
-      return `// C++/Java Template\n#include <iostream>\nusing namespace std;\n\nint main() {\n    // Write code here\n    return 0;\n}`;
+      return `function ${funcName}(input) {\n    // Write code here\n    return input;\n}`;
     }
+    return `// Template for ${lang}\n`;
   };
 
-  // Fetch Problem Details & Comments
+  // Fetch Problem Details, Discussions & Submissions
   const fetchData = async () => {
     setLoading(true);
     try {
       const pRes = await axiosInstance.get(`/problems/${slug}`);
       setProblem(pRes.data);
-      setCode(getCodeTemplate(pRes.data, language));
+      setCode(loadCodeTemplate(pRes.data, language));
       
-      const cRes = await axiosInstance.get(`/comments/${slug}`);
-      setComments(cRes.data);
+      const dRes = await axiosInstance.get(`/discussions/${slug}`);
+      setDiscussions(dRes.data);
+      
+      // Update local submissions list
+      const allSubs = JSON.parse(localStorage.getItem('oj_submissions') || '[]');
+      const filtered = allSubs.filter(s => s.problemId === pRes.data.id || s.problem_slug === pRes.data.slug);
+      setSubmissionsList(filtered.reverse());
     } catch (err) {
       setError('Problem not found or failed to load data.');
       console.error(err);
@@ -80,7 +85,7 @@ const ProblemWorkspace = () => {
   // Update template on language switch
   useEffect(() => {
     if (problem) {
-      setCode(getCodeTemplate(problem, language));
+      setCode(loadCodeTemplate(problem, language));
     }
   }, [language]);
 
@@ -88,204 +93,168 @@ const ProblemWorkspace = () => {
     setLanguage(e.target.value);
   };
 
-  // Load submissions from localStorage
-  useEffect(() => {
-    if (problem) {
-      const allSubs = JSON.parse(localStorage.getItem('oj_submissions') || '[]');
-      const filtered = allSubs.filter(s => s.problem_slug === problem.slug);
-      setSubmissionsList(filtered.reverse());
-    }
-  }, [problem]);
-
   // -----------------------------------------------------------------
-  // RUN/EVAL CODE CLIENT SIDE (JS ONLY, SIMULATE OTHERS)
+  // RUN CODE (CLIENT SIDE SAMPLE) & SUBMIT CODE (VIA API CLIENT)
   // -----------------------------------------------------------------
-  const executeCode = async (isSubmission = false) => {
+  
+  // "Run Code" executes only public sample test cases
+  const handleRunCode = async () => {
     setIsRunning(true);
-    setRunnerOutput('Running compiler execution...');
+    setRunnerOutput('Running sample test cases...');
     setRunVerdict(null);
-    await new Promise(r => setTimeout(r, 800)); // Sim delay
+    
+    try {
+      // Fetch public test cases
+      const tcRes = await axiosInstance.get(`/problems/${problem.id}/testcases`);
+      const publicCases = tcRes.data;
 
-    if (language !== 'javascript') {
-      // Simulation for other languages
-      setIsRunning(false);
-      if (code.trim().length < 10) {
-        setRunVerdict({ status: 'CE', detail: 'Compilation Error: Syntax error near line 1' });
-        setRunnerOutput('g++: compilation failed.\nIn function main:\nerror: expected \';\' before return');
+      if (publicCases.length === 0) {
+        setRunnerOutput('No public sample test cases defined for this problem.');
+        setIsRunning(false);
         return;
       }
-      // Return a simulated accepted or wrong answer based on code
-      const isCorrect = code.toLowerCase().includes('return') || code.toLowerCase().includes('def') || code.toLowerCase().includes('solve');
-      if (isCorrect) {
-        setRunVerdict({ status: 'AC', detail: 'Accepted (Simulated Python/C++)' });
-        setRunnerOutput(`All test cases passed.\nRuntime: 12ms\nMemory: 8MB`);
-        if (isSubmission) recordSubmission('AC', 'Simulated execution');
-      } else {
-        setRunVerdict({ status: 'WA', detail: 'Wrong Answer on Hidden Case 4' });
-        setRunnerOutput(`Expected: ${problem.output}\nGot: [Null/Empty]`);
-        if (isSubmission) recordSubmission('WA', 'Output mismatch on hidden case 4');
-      }
-      return;
-    }
 
-    // actual client-side eval execution for JavaScript!
-    try {
-      // 1. Create function sandbox
-      // Safe execution wrapping the eval
-      const cleanCode = code + `\nreturn ${problem.slug.replace(/-([a-z])/g, (g) => g[1].toUpperCase())}`;
+      await new Promise(r => setTimeout(r, 600)); // Minor execution delay
+
+      if (language !== 'javascript') {
+        setRunVerdict({ status: 'AC', detail: 'Sample Case Passed (Simulated)' });
+        setRunnerOutput(`Input: ${publicCases[0].input}\nOutput: ${publicCases[0].expectedOutput}\n\nAll public test cases passed (Simulated).`);
+        setIsRunning(false);
+        return;
+      }
+
+      // JavaScript client execution sandbox
+      const cleanCode = code + `\nreturn ${problem.functionName};`;
       const userFunctionFactory = new Function(cleanCode);
       const userFunction = userFunctionFactory();
 
-      if (typeof userFunction !== 'function') {
-        throw new Error(`Could not locate function: ${problem.slug.replace(/-([a-z])/g, (g) => g[1].toUpperCase())}`);
-      }
+      let passedCount = 0;
+      let outputLogs = [];
 
-      // Helper to match actual problem logic
-      let result;
-      let expected;
+      for (let tc of publicCases) {
+        let args = [];
+        try {
+          if (tc.input.includes('\n')) {
+            args = tc.input.split('\n').map(p => JSON.parse(p.trim()));
+          } else {
+            args = [JSON.parse(tc.input.trim())];
+          }
+        } catch (e) {
+          args = [tc.input];
+        }
 
-      if (problem.slug === 'two-sum') {
-        // Run on sample test case
-        result = userFunction([2, 7, 11, 15], 9);
-        expected = [0, 1];
+        const expected = JSON.parse(tc.expectedOutput.trim());
+        const result = userFunction(...args);
         
-        // Hidden test case validation if submitting
-        if (isSubmission) {
-          const result2 = userFunction([3, 2, 4], 6);
-          const expected2 = [1, 2];
-          const matches2 = Array.isArray(result2) && result2.sort().join(',') === expected2.sort().join(',');
-          
-          const matches = Array.isArray(result) && result.sort().join(',') === expected.sort().join(',');
-          if (matches && matches2) {
-            setRunVerdict({ status: 'AC', detail: 'All 2/2 Test Cases Passed (Accepted)' });
-            setRunnerOutput(`Input: nums = [2,7,11,15], target = 9\nOutput: [${result.join(', ')}]\n\nInput: nums = [3,2,4], target = 6\nOutput: [${result2.join(', ')}]\n\nStatus: Accepted!`);
-            recordSubmission('AC', 'Client-side javascript verification');
-          } else {
-            setRunVerdict({ status: 'WA', detail: 'Wrong Answer' });
-            setRunnerOutput(`Test case nums = [3,2,4], target = 6 failed.\nExpected: [1, 2]\nGot: ${JSON.stringify(result2)}`);
-            recordSubmission('WA', 'Output mismatch');
-          }
-        } else {
-          const matches = Array.isArray(result) && result.sort().join(',') === expected.sort().join(',');
-          if (matches) {
-            setRunVerdict({ status: 'AC', detail: 'Sample Case Passed' });
-            setRunnerOutput(`Input: ${problem.input}\nOutput: [${result.join(', ')}]\n\nStatus: Correct!`);
-          } else {
-            setRunVerdict({ status: 'WA', detail: 'Wrong Answer on Sample Case' });
-            setRunnerOutput(`Input: ${problem.input}\nExpected: ${problem.output}\nGot: ${JSON.stringify(result)}`);
-          }
-        }
+        const isMatch = (Array.isArray(expected) && Array.isArray(result)) 
+          ? expected.sort().join(',') === result.sort().join(',')
+          : JSON.stringify(expected) === JSON.stringify(result);
 
-      } else if (problem.slug === 'reverse-string') {
-        const testArr = ['h','e','l','l','o'];
-        userFunction(testArr); // In-place reverse
-        result = testArr;
-        expected = ['o','l','l','e','h'];
-
-        if (isSubmission) {
-          const testArr2 = ['H','a','n','n','a','h'];
-          userFunction(testArr2);
-          const expected2 = ['h','a','n','n','a','H'];
-          const matches2 = resultMatches(testArr2, expected2);
-          const matches = resultMatches(result, expected);
-          if (matches && matches2) {
-            setRunVerdict({ status: 'AC', detail: 'All 2/2 Test Cases Passed (Accepted)' });
-            setRunnerOutput(`Input: ['h','e','l','l','o']\nOutput: ${JSON.stringify(result)}\n\nInput: ['H','a','n','n','a','h']\nOutput: ${JSON.stringify(testArr2)}\n\nStatus: Accepted!`);
-            recordSubmission('AC', 'Client-side javascript verification');
-          } else {
-            setRunVerdict({ status: 'WA', detail: 'Wrong Answer' });
-            setRunnerOutput(`Expected: ${JSON.stringify(expected2)}\nGot: ${JSON.stringify(testArr2)}`);
-            recordSubmission('WA', 'Output mismatch');
-          }
+        if (isMatch) {
+          passedCount++;
+          outputLogs.push(`Test Case ${passedCount} [SUCCESS]\nInput: ${tc.input.replace('\n', ', ')}\nOutput: ${JSON.stringify(result)}\n`);
         } else {
-          const matches = resultMatches(result, expected);
-          if (matches) {
-            setRunVerdict({ status: 'AC', detail: 'Sample Case Passed' });
-            setRunnerOutput(`Input: ${problem.input}\nOutput: ${JSON.stringify(result)}\n\nStatus: Correct!`);
-          } else {
-            setRunVerdict({ status: 'WA', detail: 'Wrong Answer on Sample Case' });
-            setRunnerOutput(`Expected: ${problem.output}\nGot: ${JSON.stringify(result)}`);
-          }
+          outputLogs.push(`Test Case ${passedCount + 1} [FAILED]\nInput: ${tc.input.replace('\n', ', ')}\nExpected: ${tc.expectedOutput}\nGot: ${JSON.stringify(result)}\n`);
+          setRunVerdict({ status: 'WA', detail: 'Wrong Answer on Sample Case' });
+          setRunnerOutput(outputLogs.join('\n'));
+          setIsRunning(false);
+          return;
         }
-      } else {
-        // General fallback evaluation
-        setRunVerdict({ status: 'AC', detail: 'Sample Case Evaluated (Simulated)' });
-        setRunnerOutput(`Compiled successfully.\nOutput matches sample outputs.`);
-        if (isSubmission) recordSubmission('AC', 'Client-side simulation');
       }
 
+      setRunVerdict({ status: 'AC', detail: 'Sample Cases Passed' });
+      setRunnerOutput(outputLogs.join('\n') + `\nAll ${passedCount}/${publicCases.length} sample test cases passed successfully.`);
     } catch (err) {
       setRunVerdict({ status: 'CE', detail: 'Runtime/Compilation Error' });
       setRunnerOutput(`Error: ${err.message}\n${err.stack ? err.stack.split('\n')[0] : ''}`);
-      if (isSubmission) recordSubmission('CE', err.message);
     } finally {
       setIsRunning(false);
     }
   };
 
-  const resultMatches = (a, b) => {
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((val, index) => val === b[index]);
-  };
+  // "Submit Solution" calls POST /submissions to evaluate against hidden test cases
+  const handleSubmitCode = async () => {
+    setIsRunning(true);
+    setRunnerOutput('Submitting solution to judge queue...');
+    setRunVerdict(null);
 
-  // Helper to record submission history in local storage
-  const recordSubmission = (status, remarks) => {
-    const allSubs = JSON.parse(localStorage.getItem('oj_submissions') || '[]');
-    const newSub = {
-      id: 'sub_' + Math.random().toString(36).substr(2, 9),
-      problem_slug: problem.slug,
-      problem_title: problem.title,
-      username: user ? user.username : 'Guest Coder',
-      language,
-      code,
-      status,
-      remarks,
-      created_at: new Date().toISOString()
-    };
-    allSubs.push(newSub);
-    localStorage.setItem('oj_submissions', JSON.stringify(allSubs));
-    setSubmissionsList(prev => [newSub, ...prev]);
+    try {
+      const response = await axiosInstance.post('/submissions', {
+        problemId: problem.id,
+        code,
+        language
+      });
+
+      const submission = response.data;
+      
+      // Update local submissions list
+      setSubmissionsList(prev => [submission, ...prev]);
+
+      // Handle verdict presentation
+      if (submission.status === 'AC') {
+        setRunVerdict({ status: 'AC', detail: `Accepted (${submission.runtime}ms)` });
+        setRunnerOutput(`Verdict: ACCEPTED\nPassed Test Cases: ${submission.passedTestCases}/${submission.totalTestCases}\nExecution Time: ${submission.runtime}ms\nMemory Used: ${submission.memory}MB\n\nSolution verified successfully.`);
+      } else if (submission.status === 'WA') {
+        setRunVerdict({ status: 'WA', detail: 'Wrong Answer' });
+        setRunnerOutput(`Verdict: WRONG ANSWER\nPassed Test Cases: ${submission.passedTestCases}/${submission.totalTestCases}\n\nConsole logs:\n${submission.errorOutput || 'Output mismatch on hidden case.'}`);
+      } else if (submission.status === 'CE') {
+        setRunVerdict({ status: 'CE', detail: 'Compilation Error' });
+        setRunnerOutput(`Verdict: COMPILATION ERROR\n\nCompiler Output:\n${submission.compileOutput}\n\nError Output:\n${submission.errorOutput}`);
+      } else {
+        setRunVerdict({ status: 'RE', detail: 'Runtime Error' });
+        setRunnerOutput(`Verdict: RUNTIME ERROR\n\n${submission.errorOutput}`);
+      }
+
+    } catch (err) {
+      setRunVerdict({ status: 'RE', detail: 'Server Error' });
+      setRunnerOutput(`Failed to execute submission check: ${err.response?.data?.message || err.message}`);
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   // -----------------------------------------------------------------
-  // COMMENTS SECTION
+  // DISCUSSIONS SECTION (Replaces Comments)
   // -----------------------------------------------------------------
-  const handleCommentSubmit = async (e) => {
+  const handleDiscussionSubmit = async (e) => {
     e.preventDefault();
-    if (!commentBody.trim()) return;
+    if (!discussionTitle.trim() || !discussionContent.trim()) return;
     if (!user) {
-      alert('You must be signed in to add a comment.');
+      alert('You must be signed in to post in discussions.');
       navigate('/login');
       return;
     }
 
-    setSubmittingComment(true);
+    setSubmittingDiscussion(true);
     try {
-      const response = await axiosInstance.post('/comments', {
-        problem_id: slug,
-        body: commentBody
+      const response = await axiosInstance.post('/discussions', {
+        problemId: problem.id,
+        title: discussionTitle,
+        content: discussionContent
       });
-      setComments(prev => [...prev, response.data]);
-      setCommentBody('');
+      setDiscussions(prev => [response.data, ...prev]);
+      setDiscussionTitle('');
+      setDiscussionContent('');
     } catch (err) {
-      alert('Failed to post comment. Refresh or login again.');
+      alert('Failed to post discussion. Please try again.');
     } finally {
-      setSubmittingComment(false);
+      setSubmittingDiscussion(false);
     }
   };
 
-  const handleCommentDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this comment?')) return;
+  const handleDiscussionDelete = async (id, e) => {
+    e.stopPropagation(); // Prevent toggling the accordion when clicking delete
+    if (!window.confirm('Are you sure you want to delete this discussion thread?')) return;
     try {
-      await axiosInstance.delete(`/comments/${id}`);
-      // Refresh local comment state (change current display to [deleted])
-      setComments(prev => prev.map(c => {
-        if (c.id === id) {
-          return { ...c, body: '[deleted]', username: '[deleted]', is_deleted: true };
+      await axiosInstance.delete(`/discussions/${id}`);
+      setDiscussions(prev => prev.map(d => {
+        if (d.id === id) {
+          return { ...d, title: '[deleted]', content: '[deleted]', username: '[deleted]', is_deleted: true };
         }
-        return c;
+        return d;
       }));
     } catch (err) {
-      alert('Unauthorized to delete this comment.');
+      alert('Unauthorized to delete this discussion thread.');
     }
   };
 
@@ -316,6 +285,7 @@ const ProblemWorkspace = () => {
           <span style={{ fontWeight: '700', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{problem.id}</span>
           <h2 style={{ fontSize: '1.125rem', fontWeight: '700' }}>{problem.title}</h2>
           <span className="badge" style={{ textTransform: 'capitalize' }}>{problem.difficulty}</span>
+          <span className="badge" style={{ fontSize: '0.65rem' }}>Limits: {problem.timilimt}ms / {problem.memorylimit}MB</span>
         </div>
         <button onClick={() => navigate('/problems')} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.75rem' }}>
           All Problems
@@ -336,10 +306,10 @@ const ProblemWorkspace = () => {
               Description
             </button>
             <button 
-              onClick={() => setActiveTab('comments')}
-              className={`tab-btn ${activeTab === 'comments' ? 'active' : ''}`}
+              onClick={() => setActiveTab('discussions')}
+              className={`tab-btn ${activeTab === 'discussions' ? 'active' : ''}`}
             >
-              Comments ({comments.length})
+              Discussions ({discussions.length})
             </button>
             <button 
               onClick={() => setActiveTab('submissions')}
@@ -367,24 +337,55 @@ const ProblemWorkspace = () => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <span className="label" style={{ fontSize: '0.7rem' }}>constraints :</span>
                   <pre style={{ backgroundColor: 'var(--bg-tertiary)', padding: '12px', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.825rem', overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
-                    {problem.constraints}
+                    {problem.constrains}
                   </pre>
                 </div>
 
-                <div className="grid grid-2" style={{ gap: '16px', marginTop: '8px' }}>
+                {/* Example Schema Rendering */}
+                {problem.exampleSchema && problem.exampleSchema.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <span className="label" style={{ fontSize: '0.7rem' }}>Examples:</span>
+                    {problem.exampleSchema.map((ex, idx) => (
+                      <div key={idx} style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--border-radius-sm)', padding: '12px', backgroundColor: 'var(--bg-tertiary)' }}>
+                        <div style={{ fontSize: '0.8rem', marginBottom: '4px' }}><strong>Example {idx + 1}:</strong></div>
+                        <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>Input: {ex.input}</div>
+                        <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>Output: {ex.output}</div>
+                        {ex.explanation && (
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>Explanation: {ex.explanation}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {problem.parameterTypes && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <span className="label" style={{ fontSize: '0.7rem' }}>input:</span>
-                    <pre style={{ backgroundColor: 'var(--bg-tertiary)', padding: '12px', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.825rem', overflowX: 'auto' }}>
-                      {problem.input}
+                    <span className="label" style={{ fontSize: '0.7rem' }}>parameterTypes:</span>
+                    <pre style={{ backgroundColor: 'var(--bg-tertiary)', padding: '8px 12px', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
+                      {problem.parameterTypes}
                     </pre>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <span className="label" style={{ fontSize: '0.7rem' }}>output:</span>
-                    <pre style={{ backgroundColor: 'var(--bg-tertiary)', padding: '12px', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.825rem', overflowX: 'auto' }}>
-                      {problem.output}
-                    </pre>
+                )}
+
+                {/* Hints Section */}
+                {problem.hints && (
+                  <div style={{ marginTop: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
+                    <button 
+                      onClick={() => setShowHint(!showHint)} 
+                      className="btn btn-secondary" 
+                      style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                    >
+                      {showHint ? <EyeOff size={14} /> : <Eye size={14} />}
+                      {showHint ? 'Hide Hint' : 'Show Hint'}
+                    </button>
+                    {showHint && (
+                      <div className="card" style={{ marginTop: '12px', padding: '12px', backgroundColor: 'var(--bg-tertiary)', fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                        <AlertOctagon size={16} style={{ flexShrink: 0, marginTop: '2px', color: 'var(--color-tle)' }} />
+                        <span>{problem.hints}</span>
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
 
                 {problem.tags && (
                   <div style={{ marginTop: '16px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -397,24 +398,34 @@ const ProblemWorkspace = () => {
               </div>
             )}
 
-            {/* TAB: COMMENTS */}
-            {activeTab === 'comments' && (
+            {/* TAB: DISCUSSIONS (Replaces Comments) */}
+            {activeTab === 'discussions' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <h3 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>Discussion Thread</h3>
+                <h3 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>Discussions</h3>
                 
-                {/* Comment Box */}
-                <form onSubmit={handleCommentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* Create Thread Box */}
+                <form onSubmit={handleDiscussionSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder={user ? "Discussion Title/Subject..." : "Please log in to add a post."}
+                    value={discussionTitle}
+                    onChange={(e) => setDiscussionTitle(e.target.value)}
+                    disabled={submittingDiscussion || !user}
+                    required
+                  />
                   <textarea
                     className="input"
                     style={{ minHeight: '80px', resize: 'vertical', fontFamily: 'inherit', padding: '12px' }}
-                    placeholder={user ? "Share your approach or ask a question..." : "Please log in to add a comment."}
-                    value={commentBody}
-                    onChange={(e) => setCommentBody(e.target.value)}
-                    disabled={submittingComment || !user}
+                    placeholder="Write detailed content here..."
+                    value={discussionContent}
+                    onChange={(e) => setDiscussionContent(e.target.value)}
+                    disabled={submittingDiscussion || !user}
+                    required
                   />
                   {user ? (
-                    <button type="submit" className="btn btn-primary" style={{ alignSelf: 'flex-end', padding: '8px 16px' }} disabled={submittingComment}>
-                      {submittingComment ? 'Posting...' : 'Post Comment'}
+                    <button type="submit" className="btn btn-primary" style={{ alignSelf: 'flex-end', padding: '8px 16px' }} disabled={submittingDiscussion}>
+                      {submittingDiscussion ? 'Posting...' : 'Create Thread'}
                     </button>
                   ) : (
                     <button type="button" onClick={() => navigate('/login')} className="btn btn-secondary" style={{ alignSelf: 'flex-end', padding: '8px 16px' }}>
@@ -423,39 +434,61 @@ const ProblemWorkspace = () => {
                   )}
                 </form>
 
-                {/* List of comments */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '12px' }}>
-                  {comments.length === 0 ? (
+                {/* List of discussions in accordion style */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
+                  {discussions.length === 0 ? (
                     <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center', padding: '24px' }}>
-                      No comments yet. Be the first to start the discussion!
+                      No discussions found. Start a new thread!
                     </div>
                   ) : (
-                    comments.map((comment) => (
-                      <div key={comment.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-                        <div style={{ display: 'flex', justify: 'space-between', alignItems: 'center', fontSize: '0.75rem' }}>
-                          <span style={{ fontWeight: '600', color: comment.is_deleted ? 'var(--text-muted)' : 'var(--text-primary)' }}>
-                            {comment.username}
-                          </span>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)' }}>
-                            <span>{new Date(comment.created_at).toLocaleDateString()}</span>
-                            {!comment.is_deleted && (user?.role === 'admin' || user?.id === comment.user_id) && (
-                              <button 
-                                onClick={() => handleCommentDelete(comment.id)} 
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', transition: 'color 0.1s' }}
-                                onMouseEnter={(e) => e.target.style.color = 'var(--color-wa)'}
-                                onMouseLeave={(e) => e.target.style.color = 'var(--text-muted)'}
-                                title="Delete comment"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            )}
+                    discussions.map((d) => {
+                      const isExpanded = expandedDiscussionId === d.id;
+                      return (
+                        <div 
+                          key={d.id} 
+                          className="card" 
+                          style={{ 
+                            padding: '14px', 
+                            cursor: d.is_deleted ? 'default' : 'pointer', 
+                            borderColor: isExpanded ? 'var(--text-primary)' : 'var(--border-color)' 
+                          }}
+                          onClick={() => !d.is_deleted && setExpandedDiscussionId(isExpanded ? null : d.id)}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <h4 style={{ fontSize: '0.95rem', fontWeight: '700', textDecoration: d.is_deleted ? 'line-through' : 'none', color: d.is_deleted ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                                {d.title}
+                              </h4>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                Posted by <strong>{d.username}</strong>
+                              </span>
+                            </div>
+                            
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              <span>{new Date(d.createdAt).toLocaleDateString()}</span>
+                              {!d.is_deleted && (user?.role === 'admin' || user?.id === d.userId) && (
+                                <button 
+                                  onClick={(e) => handleDiscussionDelete(d.id, e)} 
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', transition: 'color 0.1s' }}
+                                  onMouseEnter={(e) => e.target.style.color = 'var(--color-wa)'}
+                                  onMouseLeave={(e) => e.target.style.color = 'var(--text-muted)'}
+                                  title="Delete Thread"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </div>
                           </div>
+
+                          {/* Accordion Content Panel */}
+                          {isExpanded && !d.is_deleted && (
+                            <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '12px', paddingTop: '12px', fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                              {d.content}
+                            </div>
+                          )}
                         </div>
-                        <p style={{ fontSize: '0.875rem', color: comment.is_deleted ? 'var(--text-muted)' : 'var(--text-primary)', fontStyle: comment.is_deleted ? 'italic' : 'normal', marginTop: '4px' }}>
-                          {comment.body}
-                        </p>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -485,12 +518,19 @@ const ProblemWorkspace = () => {
                               {sub.status === 'AC' ? 'ACCEPTED' : sub.status === 'CE' ? 'COMPILATION ERROR' : 'WRONG ANSWER'}
                             </span>
                             <span className="user-role-badge" style={{ fontSize: '0.6rem', padding: '1px 4px' }}>{sub.language}</span>
+                            {sub.status === 'AC' && (
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                ({sub.runtime}ms / {sub.memory}MB)
+                              </span>
+                            )}
                           </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{sub.remarks}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            {sub.status === 'AC' ? 'All test cases passed' : `Passed ${sub.passedTestCases}/${sub.totalTestCases} cases`}
+                          </div>
                         </div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <Clock size={12} />
-                          {new Date(sub.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(sub.submittedAt || sub.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </div>
                       </div>
                     ))}
@@ -510,15 +550,15 @@ const ProblemWorkspace = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Code2 size={16} style={{ color: 'var(--text-secondary)' }} />
               <select className="input" style={{ padding: '4px 8px', fontSize: '0.8rem', cursor: 'pointer' }} value={language} onChange={handleLanguageChange}>
-                <option value="javascript">JavaScript (Runner Enabled)</option>
+                <option value="javascript">JavaScript (Evaluator Active)</option>
                 <option value="python">Python 3 (Simulated)</option>
-                <option value="cpp">C++ (GCC 11, Simulated)</option>
+                <option value="cpp">C++ (GCC, Simulated)</option>
               </select>
             </div>
             
             <div style={{ display: 'flex', gap: '8px' }}>
               <button 
-                onClick={() => executeCode(false)} 
+                onClick={handleRunCode} 
                 disabled={isRunning} 
                 className="btn btn-secondary" 
                 style={{ padding: '6px 12px', fontSize: '0.8rem' }}
@@ -527,7 +567,7 @@ const ProblemWorkspace = () => {
                 Run Code
               </button>
               <button 
-                onClick={() => executeCode(true)} 
+                onClick={handleSubmitCode} 
                 disabled={isRunning} 
                 className="btn btn-primary" 
                 style={{ padding: '6px 12px', fontSize: '0.8rem' }}
@@ -570,7 +610,7 @@ const ProblemWorkspace = () => {
                 <span 
                   style={{ 
                     fontWeight: '700',
-                    color: runVerdict.status === 'AC' ? 'var(--color-ac)' : 'var(--color-wa)'
+                    color: (runVerdict.status === 'AC') ? 'var(--color-ac)' : 'var(--color-wa)'
                   }}
                 >
                   Verdict: {runVerdict.detail}
