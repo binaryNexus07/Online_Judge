@@ -52,21 +52,17 @@ const Problems = () => {
     fetchProblems();
   }, [difficulty, tag, page]);
 
-  // Fetch all available tags once for filtering
+  // Fetch all available topics relationally for filtering
   useEffect(() => {
-    const loadAllTags = async () => {
+    const loadAllTopics = async () => {
       try {
-        const response = await axiosInstance.get('/problems', { params: { limit: 1000 } });
-        const tags = new Set();
-        response.data.problems.forEach(p => {
-          if (p.tags) p.tags.forEach(t => tags.add(t));
-        });
-        setAllTags(Array.from(tags));
+        const response = await axiosInstance.get('/topics');
+        setAllTags(response.data);
       } catch (err) {
-        console.error('Failed to load tags list', err);
+        console.error('Failed to load topics list', err);
       }
     };
-    loadAllTags();
+    loadAllTopics();
   }, []);
 
   const handleSearchSubmit = (e) => {
@@ -139,16 +135,16 @@ const Problems = () => {
             ))}
           </select>
 
-          {/* Tag Dropdown */}
+          {/* Tag/Topic Dropdown */}
           <select 
             className="input" 
             style={{ minWidth: '130px', cursor: 'pointer' }}
             value={tag}
             onChange={(e) => { setTag(e.target.value); setPage(1); }}
           >
-            <option value="">All Tags</option>
+            <option value="">All Topics</option>
             {allTags.map(t => (
-              <option key={t} value={t}>{t}</option>
+              <option key={t.id || t} value={t.slug || t}>{t.name || t}</option>
             ))}
           </select>
 
