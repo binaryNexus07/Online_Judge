@@ -1,4 +1,4 @@
-# Bansal OJ — Minimalist React Online Judge
+# Judge{0} — Minimalist React Online Judge
 
 Bansal OJ is a minimalist, responsive, light/dark themed React Single-Page Application (SPA) designed as an automated algorithmic evaluation platform. It aligns exactly with the design specifications of `online_judge_design.pdf`, focusing on Frontend Routing, Axios API service layers, and route authorizations.
 
@@ -61,30 +61,3 @@ The frontend Axios client connects directly to standard URLs compatible with the
 | **DELETE** | `/api/comments/:id` | Delete a comment (soft delete `is_deleted = true`) | Owner / Admin |
 
 ---
-
-## 🚀 Getting Started
-
-### 1. Installation
-Install the necessary npm dependencies inside the project folder:
-```bash
-npm install
-```
-
-### 2. Running Locally
-Run the Vite development server:
-```bash
-npm run dev
-```
-
-### 3. Production Compilation
-Verify that all source code compiles cleanly without errors:
-```bash
-npm run build
-```
-
----
-
-## 🔑 Quick Login Credentials (Mock Sandbox)
-For convenience during evaluation, the Login page includes shortcuts to bypass registration:
-1. **Admin Coder**: `sumitbansal1290@gmail.com` (Password: `admin123`) — *Grants access to the Admin panel to create/edit problems.*
-2. **Standard Coder**: `alice@example.com` (Password: `user123`) — *Grants standard comment and submit features.*
