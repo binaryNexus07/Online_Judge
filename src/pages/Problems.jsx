@@ -72,6 +72,7 @@ const Problems = () => {
   };
 
   const getDifficultyColor = (diff) => {
+    if (!diff) return 'var(--text-secondary)';
     switch (diff.toLowerCase()) {
       case 'easy': return 'var(--color-ac)';
       case 'medium': return 'var(--color-tle)';

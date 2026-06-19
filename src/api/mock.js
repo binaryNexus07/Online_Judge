@@ -137,6 +137,7 @@ const SEED_PROBLEMS = [
     functionName: "lengthOfLongestSubstring",
     parameterTypes: "string",
     hints: "Maintain a sliding window containing unique characters, shifting the left pointer when duplicates occur.",
+    difficulty: "medium",
     createdAt: new Date().toISOString()
   }
 ];
@@ -388,14 +389,14 @@ export const setupMockAPI = (axiosInstance) => {
       if (search) {
         const query = search.toLowerCase();
         filtered = filtered.filter(p => 
-          p.title.toLowerCase().includes(query) || 
-          p.id.toLowerCase().includes(query) || 
-          p.description.toLowerCase().includes(query)
+          (p.title && p.title.toLowerCase().includes(query)) || 
+          (p.id && p.id.toLowerCase().includes(query)) || 
+          (p.description && p.description.toLowerCase().includes(query))
         );
       }
 
       if (difficulty) {
-        filtered = filtered.filter(p => p.difficulty.toLowerCase() === difficulty.toLowerCase());
+        filtered = filtered.filter(p => p.difficulty && p.difficulty.toLowerCase() === difficulty.toLowerCase());
       }
 
       // Filter relationally using oj_problem_topics
