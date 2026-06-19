@@ -13,6 +13,9 @@ import Leaderboard from './pages/Leaderboard';
 import AdminPanel from './pages/AdminPanel';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import AdminLogin from './pages/AdminLogin';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Forbidden from './pages/Forbidden';
 import NotFound from './pages/NotFound';
 
@@ -30,19 +33,24 @@ function App() {
                 <Route path="/problems" element={<Problems />} />
                 <Route path="/problems/:slug" element={<ProblemWorkspace />} />
                 <Route path="/leaderboard" element={<Leaderboard />} />
-                
-                {/* Auth Routes */}
+
+                {/* User Auth Routes */}
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
-                
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password/:token" element={<ResetPassword />} />
+
+                {/* Hidden Admin Auth Gate */}
+                <Route path="/sudo" element={<AdminLogin />} />
+
                 {/* Admin-only Routes */}
-                <Route 
-                  path="/admin" 
+                <Route
+                  path="/admin"
                   element={
                     <ProtectedRoute adminOnly={true}>
                       <AdminPanel />
                     </ProtectedRoute>
-                  } 
+                  }
                 />
 
                 {/* Error Pages */}
