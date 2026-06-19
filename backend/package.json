@@ -1,0 +1,31 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "This is the backend API for the JudgeX built with Node.js, Express, and MongoDB.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "author": "ankit",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.17.0",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.6.3",
+    "multer": "^2.1.1",
+    "nodemailer": "^8.0.10",
+    "nodemon": "^3.1.14",
+    "zod": "^4.4.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "JudgeX"
+  }
+}

@@ -1,0 +1,79 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: judgex-backend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - MONGO_URI=mongodb://mongodb:27017/judgex
+      - JUDGE0_API_BASE_URL=https://ce.judge0.com
+    depends_on:
+      - mongodb
+      - judge0
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - judgex-network
+
+  mongodb:
+    image: mongo:latest
+    container_name: judgex-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - judgex-network
+
+  judge0:
+    image: judge0/judge0:1.13.1
+    container_name: judge0-api
+    ports:
+      - "2358:2358"
+    environment:
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=judge0
+      - POSTGRES_USER=judge0
+      - POSTGRES_PASSWORD=judge0
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - judgex-network
+
+  redis:
+    image: redis:latest
+    container_name: judgex-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - judgex-network
+
+  postgres:
+    image: postgres:15
+    container_name: judgex-postgres
+    environment:
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0
+      POSTGRES_DB: judge0
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - judgex-network
+
+volumes:
+  mongodb_data:
+  postgres_data:
+
+networks:
+  judgex-network:
+    driver: bridge

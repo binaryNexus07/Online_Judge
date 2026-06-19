@@ -3,60 +3,20 @@ import axiosInstance from '../api/client';
 
 const AuthContext = createContext();
 
-const decodeToken = (token) => {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      window
-        .atob(base64)
-        .split('')
-        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    );
-    return JSON.parse(jsonPayload);
-  } catch (e) {
-    return null;
-  }
-};
-
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [accessToken, setAccessToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Set the in-memory access token and decode user data
-  const setToken = (token) => {
-    if (token) {
-      setAccessToken(token);
-      axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      const decoded = decodeToken(token);
-      if (decoded) {
-        setUser({
-          id: decoded.id,
-          username: decoded.username,
-          email: decoded.email,
-          role: decoded.role,
-        });
-      }
-    } else {
-      setAccessToken(null);
-      setUser(null);
-      delete axiosInstance.defaults.headers.common['Authorization'];
-    }
-  };
-
-  // Silently refresh token on page load
+  // Hydrate session on mount by calling GET /auth/user (uses httpOnly cookie)
   const hydrate = async () => {
     try {
-      // The endpoint will verify refresh-token httpOnly cookie
-      const response = await axiosInstance.post('/auth/refresh');
-      if (response.data && response.data.accessToken) {
-        setToken(response.data.accessToken);
+      const response = await axiosInstance.get('/auth/user');
+      if (response.data?.success && response.data?.data?.user) {
+        setUser(response.data.data.user);
       }
     } catch (err) {
-      // Refresh token expired or doesn't exist
-      setToken(null);
+      // No valid session — user stays null
+      setUser(null);
     } finally {
       setLoading(false);
     }
@@ -66,14 +26,20 @@ export const AuthProvider = ({ children }) => {
     hydrate();
   }, []);
 
-  const login = async (email, password) => {
+  const login = async (identifier, password) => {
     try {
-      const response = await axiosInstance.post('/auth/login', { email, password });
-      if (response.data && response.data.accessToken) {
-        setToken(response.data.accessToken);
-        return { success: true };
+      // identifier can be email or userName
+      const isEmail = identifier.includes('@');
+      const payload = isEmail
+        ? { email: identifier, password }
+        : { userName: identifier, password };
+
+      const response = await axiosInstance.post('/auth/login', payload);
+      if (response.data?.success && response.data?.data?.user) {
+        setUser(response.data.data.user);
+        return { success: true, user: response.data.data.user };
       }
-      return { success: false, message: 'Invalid server response' };
+      return { success: false, message: response.data?.message || 'Login failed' };
     } catch (err) {
       return {
         success: false,
@@ -82,10 +48,13 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (username, email, password) => {
+  const register = async (userName, name, email, password) => {
     try {
-      await axiosInstance.post('/auth/register', { username, email, password });
-      return { success: true };
+      const response = await axiosInstance.post('/auth/register', { userName, name, email, password });
+      if (response.data?.success) {
+        return { success: true, message: response.data.message };
+      }
+      return { success: false, message: response.data?.message || 'Registration failed.' };
     } catch (err) {
       return {
         success: false,
@@ -98,14 +67,41 @@ export const AuthProvider = ({ children }) => {
     try {
       await axiosInstance.post('/auth/logout');
     } catch (err) {
-      console.error('Logout error on backend', err);
+      console.error('Logout error:', err);
     } finally {
-      setToken(null);
+      setUser(null);
+    }
+  };
+
+  const forgotPassword = async (email) => {
+    try {
+      const response = await axiosInstance.post('/auth/forgot-password', { email });
+      return { success: true, message: response.data?.message || 'If an account exists, a reset link has been sent.' };
+    } catch (err) {
+      return {
+        success: false,
+        message: err.response?.data?.message || 'Failed to process request.',
+      };
+    }
+  };
+
+  const resetPassword = async (token, password, confirmPassword) => {
+    try {
+      const response = await axiosInstance.post(`/auth/reset-password/${token}`, { password, confirmPassword });
+      if (response.data?.success) {
+        return { success: true, message: response.data.message };
+      }
+      return { success: false, message: response.data?.message || 'Reset failed.' };
+    } catch (err) {
+      return {
+        success: false,
+        message: err.response?.data?.message || 'Password reset failed.',
+      };
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, accessToken, loading, login, register, logout, setToken }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, forgotPassword, resetPassword, hydrate }}>
       {children}
     </AuthContext.Provider>
   );
@@ -118,4 +114,3 @@ export const useAuth = () => {
   }
   return context;
 };
-export { decodeToken };

@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axiosInstance from '../api/client';
-import { Search, Filter, RefreshCw, ChevronLeft, ChevronRight, BookOpen } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, BookOpen } from 'lucide-react';
+
+// Static tags list (backend stores tags inline in Problem schema)
+const AVAILABLE_TAGS = [
+  'Array', 'Hash Table', 'String', 'Two Pointers', 'Sliding Window',
+  'Binary Search', 'Divide and Conquer', 'Dynamic Programming',
+  'Greedy', 'Stack', 'Queue', 'Tree', 'Graph', 'Sorting',
+  'Math', 'Recursion', 'Linked List', 'Backtracking'
+];
 
 const Problems = () => {
   const [problems, setProblems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Filter & Pagination state
   const [search, setSearch] = useState('');
   const [difficulty, setDifficulty] = useState('');
   const [tag, setTag] = useState('');
@@ -16,29 +23,25 @@ const Problems = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalProblems, setTotalProblems] = useState(0);
 
-  // Constants
   const limit = 10;
   const difficulties = ['Easy', 'Medium', 'Hard'];
-  
-  // Extract all unique tags dynamically from our database for the dropdown filter
-  const [allTags, setAllTags] = useState([]);
 
   const fetchProblems = async () => {
     setLoading(true);
     setError('');
     try {
-      const response = await axiosInstance.get('/problems', {
-        params: {
-          search,
-          difficulty,
-          tag,
-          page,
-          limit
-        }
-      });
-      setProblems(response.data.problems);
-      setTotalPages(response.data.totalPages);
-      setTotalProblems(response.data.total);
+      const params = { page, limit };
+      if (search) params.title = search;
+      if (difficulty) params.difficulty = difficulty;
+      if (tag) params.tags = tag;
+
+      const response = await axiosInstance.get('/problem/all', { params });
+      const resData = response.data?.data || response.data;
+      
+      setProblems(resData.problems || []);
+      const pagination = resData.pagination || {};
+      setTotalPages(pagination.totalPages || 1);
+      setTotalProblems(pagination.totalProblem || resData.problems?.length || 0);
     } catch (err) {
       setError('Failed to load problems. Please try again.');
       console.error(err);
@@ -47,23 +50,9 @@ const Problems = () => {
     }
   };
 
-  // Trigger search on parameter changes
   useEffect(() => {
     fetchProblems();
   }, [difficulty, tag, page]);
-
-  // Fetch all available topics relationally for filtering
-  useEffect(() => {
-    const loadAllTopics = async () => {
-      try {
-        const response = await axiosInstance.get('/topics');
-        setAllTags(response.data);
-      } catch (err) {
-        console.error('Failed to load topics list', err);
-      }
-    };
-    loadAllTopics();
-  }, []);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -86,10 +75,7 @@ const Problems = () => {
     setDifficulty('');
     setTag('');
     setPage(1);
-    // Directly fetch clean state
-    setTimeout(() => {
-      fetchProblems();
-    }, 0);
+    setTimeout(() => fetchProblems(), 0);
   };
 
   return (
@@ -109,23 +95,20 @@ const Problems = () => {
       {/* Query Filters */}
       <div className="card" style={{ padding: '16px', marginBottom: '24px' }}>
         <form onSubmit={handleSearchSubmit} style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
-          
-          {/* Search bar */}
           <div style={{ flex: '1 1 240px', position: 'relative' }}>
             <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
               type="text"
               className="input"
               style={{ width: '100%', paddingLeft: '36px' }}
-              placeholder="Search by ID, name, or content..."
+              placeholder="Search by title..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
 
-          {/* Difficulty Dropdown */}
-          <select 
-            className="input" 
+          <select
+            className="input"
             style={{ minWidth: '130px', cursor: 'pointer' }}
             value={difficulty}
             onChange={(e) => { setDifficulty(e.target.value); setPage(1); }}
@@ -136,29 +119,21 @@ const Problems = () => {
             ))}
           </select>
 
-          {/* Tag/Topic Dropdown */}
-          <select 
-            className="input" 
+          <select
+            className="input"
             style={{ minWidth: '130px', cursor: 'pointer' }}
             value={tag}
             onChange={(e) => { setTag(e.target.value); setPage(1); }}
           >
             <option value="">All Topics</option>
-            {allTags.map(t => (
-              <option key={t.id || t} value={t.slug || t}>{t.name || t}</option>
+            {AVAILABLE_TAGS.map(t => (
+              <option key={t} value={t}>{t}</option>
             ))}
           </select>
 
-          {/* Submit */}
-          <button type="submit" className="btn btn-primary" style={{ padding: '10px 16px' }}>
-            Search
-          </button>
-
-          {/* Clear Filters */}
+          <button type="submit" className="btn btn-primary" style={{ padding: '10px 16px' }}>Search</button>
           {(search || difficulty || tag) && (
-            <button type="button" onClick={clearFilters} className="btn btn-secondary" style={{ padding: '10px' }}>
-              Clear
-            </button>
+            <button type="button" onClick={clearFilters} className="btn btn-secondary" style={{ padding: '10px' }}>Clear</button>
           )}
         </form>
       </div>
@@ -190,20 +165,18 @@ const Problems = () => {
           <table>
             <thead>
               <tr>
-                <th style={{ width: '80px' }}>ID</th>
                 <th>Title</th>
                 <th style={{ width: '120px' }}>Difficulty</th>
                 <th>Tags</th>
-                <th style={{ width: '120px', textRight: 'right' }}>Action</th>
+                <th style={{ width: '120px' }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {problems.map((problem) => (
-                <tr key={problem.id}>
-                  <td style={{ fontWeight: '600', color: 'var(--text-secondary)' }}>{problem.id}</td>
+                <tr key={problem._id}>
                   <td>
-                    <Link 
-                      to={`/problems/${problem.slug}`} 
+                    <Link
+                      to={`/problems/${problem.slug}`}
                       style={{ color: 'var(--text-primary)', fontWeight: '600', textDecoration: 'none', transition: 'color var(--transition-speed)' }}
                       onMouseEnter={(e) => e.target.style.color = 'var(--text-secondary)'}
                       onMouseLeave={(e) => e.target.style.color = 'var(--text-primary)'}
@@ -242,7 +215,7 @@ const Problems = () => {
             Showing page <strong>{page}</strong> of <strong>{totalPages}</strong>
           </span>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button 
+            <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
               className="btn btn-secondary"
@@ -250,7 +223,7 @@ const Problems = () => {
             >
               <ChevronLeft size={16} />
             </button>
-            <button 
+            <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
               className="btn btn-secondary"

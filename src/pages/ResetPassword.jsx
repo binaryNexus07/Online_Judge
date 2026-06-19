@@ -1,29 +1,26 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { AlertCircle, CheckCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle, KeyRound } from 'lucide-react';
 
-const Register = () => {
-  const [userName, setUserName] = useState('');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+const ResetPassword = () => {
+  const { token } = useParams();
+  const navigate = useNavigate();
+  const { resetPassword } = useAuth();
+
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const { register } = useAuth();
-  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
-    if (!userName || !name || !email || !password || !confirmPassword) {
-      setError('Please fill in all fields.');
+    if (!password || !confirmPassword) {
+      setError('Please fill in both fields.');
       return;
     }
     if (password !== confirmPassword) {
@@ -31,16 +28,16 @@ const Register = () => {
       return;
     }
     if (password.length < 8) {
-      setError('Password must be at least 8 characters long.');
+      setError('Password must be at least 8 characters.');
       return;
     }
 
     setIsSubmitting(true);
-    const result = await register(userName, name, email, password);
+    const result = await resetPassword(token, password, confirmPassword);
     setIsSubmitting(false);
 
     if (result.success) {
-      setSuccess(result.message || 'Account created! Please check your email to verify, then login.');
+      setSuccess('Password reset successfully! Redirecting to login...');
       setTimeout(() => navigate('/login'), 2500);
     } else {
       setError(result.message);
@@ -51,8 +48,11 @@ const Register = () => {
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 120px)', padding: '24px' }}>
       <div className="card" style={{ width: '100%', maxWidth: '420px', padding: '32px' }}>
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: '700', letterSpacing: '-0.02em', marginBottom: '4px' }}>Create an Account</h2>
-          <p style={{ fontSize: '0.875rem' }}>Join the coding community</p>
+          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '48px', height: '48px', borderRadius: '12px', backgroundColor: 'var(--bg-tertiary)', marginBottom: '12px' }}>
+            <KeyRound size={24} style={{ color: 'var(--text-secondary)' }} />
+          </div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '700', letterSpacing: '-0.02em', marginBottom: '4px' }}>Set New Password</h2>
+          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Enter your new password below.</p>
         </div>
 
         {error && (
@@ -70,37 +70,24 @@ const Register = () => {
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div className="form-group">
-            <label className="label">Username</label>
-            <input type="text" className="input" value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="johndoe" required disabled={isSubmitting || !!success} />
-          </div>
-          <div className="form-group">
-            <label className="label">Full Name</label>
-            <input type="text" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="John Doe" required disabled={isSubmitting || !!success} />
-          </div>
-          <div className="form-group">
-            <label className="label">Email Address</label>
-            <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" required disabled={isSubmitting || !!success} />
-          </div>
-          <div className="form-group">
-            <label className="label">Password</label>
+            <label className="label">New Password</label>
             <input type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 8 chars, uppercase, lowercase, digit, special" required disabled={isSubmitting || !!success} />
           </div>
           <div className="form-group">
-            <label className="label">Confirm Password</label>
+            <label className="label">Confirm New Password</label>
             <input type="password" className="input" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="••••••••" required disabled={isSubmitting || !!success} />
           </div>
-          <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '12px', marginTop: '8px' }} disabled={isSubmitting || !!success}>
-            {isSubmitting ? <div className="spinner" /> : 'Register'}
+          <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '12px' }} disabled={isSubmitting || !!success}>
+            {isSubmitting ? <div className="spinner" /> : 'Reset Password'}
           </button>
         </form>
 
-        <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '0.875rem' }}>
-          <span style={{ color: 'var(--text-secondary)' }}>Already have an account? </span>
-          <Link to="/login" style={{ color: 'var(--text-primary)', fontWeight: '600', textDecoration: 'none' }}>Sign In</Link>
+        <div style={{ textAlign: 'center', marginTop: '20px' }}>
+          <Link to="/login" style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', textDecoration: 'none' }}>Back to Login</Link>
         </div>
       </div>
     </div>
   );
 };
 
-export default Register;
+export default ResetPassword;

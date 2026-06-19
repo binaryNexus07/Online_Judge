@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { Sun, Moon, LogOut, Code, Menu, X, Award, Shield } from 'lucide-react';
+import { Sun, Moon, LogOut, Code, Menu, X } from 'lucide-react';
 
 const Navbar = () => {
   const { theme, toggleTheme } = useTheme();
@@ -15,16 +15,12 @@ const Navbar = () => {
     navigate('/login');
   };
 
-  const getRoleBadgeColor = (role) => {
-    return role === 'admin' ? 'var(--color-wa)' : 'var(--text-secondary)';
-  };
-
   return (
     <nav className="nav-container">
       <div className="container nav-content">
         <NavLink to="/" className="nav-logo">
           <Code size={20} />
-          <span>OJ{ 0 }</span>
+          <span>OJ{'{ 0 }'}</span>
         </NavLink>
 
         {/* Desktop Navigation Links */}
@@ -35,12 +31,6 @@ const Navbar = () => {
           <NavLink to="/leaderboard" className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}>
             Leaderboard
           </NavLink>
-          {user?.role === 'admin' && (
-            <NavLink to="/admin" className={({ isActive }) => isActive ? "nav-link admin-link active" : "nav-link admin-link"}>
-              <Shield size={14} style={{ marginRight: '4px' }} />
-              Admin
-            </NavLink>
-          )}
         </div>
 
         {/* Right side controls */}
@@ -51,12 +41,7 @@ const Navbar = () => {
 
           {user ? (
             <div className="user-profile-section">
-              <span className="user-name" style={{ color: getRoleBadgeColor(user.role) }}>
-                {user.username}
-              </span>
-              <span className="user-role-badge">
-                {user.role}
-              </span>
+              <span className="user-name">{user.userName || user.name}</span>
               <button onClick={handleLogout} className="btn-logout" title="Log Out">
                 <LogOut size={16} />
               </button>
@@ -85,11 +70,6 @@ const Navbar = () => {
             <NavLink to="/leaderboard" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">
               Leaderboard
             </NavLink>
-            {user?.role === 'admin' && (
-              <NavLink to="/admin" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link mobile-admin-link">
-                Admin Control
-              </NavLink>
-            )}
 
             <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '16px 0' }} />
 
@@ -101,8 +81,7 @@ const Navbar = () => {
               {user ? (
                 <div style={{ width: '100%', marginTop: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                    <span style={{ fontWeight: '500' }}>{user.username}</span>
-                    <span className="user-role-badge">{user.role}</span>
+                    <span style={{ fontWeight: '500' }}>{user.userName || user.name}</span>
                   </div>
                   <button onClick={() => { handleLogout(); setMobileMenuOpen(false); }} className="btn btn-danger" style={{ width: '100%' }}>
                     <LogOut size={16} style={{ marginRight: '8px' }} />
